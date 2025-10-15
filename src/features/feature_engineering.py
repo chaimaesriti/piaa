@@ -91,8 +91,9 @@ class FeatureEngineer:
 
         df_transformed = df.copy()
 
-        # Detect binary features
-        binary_cols = self.detect_binary_features(df, numerical_cols)
+        # Detect binary features (excluding target)
+        cols_to_check = [col for col in numerical_cols if col != self.target_col]
+        binary_cols = self.detect_binary_features(df, cols_to_check)
         self.binary_features.extend(binary_cols)
 
         # Filter out target and binary features
@@ -219,8 +220,9 @@ class FeatureEngineer:
 
         df_transformed = df.copy()
 
-        # Detect binary features
-        binary_cols = self.detect_binary_features(df, categorical_cols)
+        # Detect binary features (excluding target)
+        cols_to_check = [col for col in categorical_cols if col != self.target_col]
+        binary_cols = self.detect_binary_features(df, cols_to_check)
         self.binary_features.extend(binary_cols)
 
         # Filter out target and binary features

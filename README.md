@@ -15,6 +15,16 @@ Complete pipeline for feature transformation and quality filtering before modeli
 - Groups rare categories (< threshold frequency) together
 - Creates: `category_grouped` with combined labels like `cat1_cat2_cat3_other`
 
+**Binary Features** (automatically detected):
+- Features with exactly 2 unique values (e.g., 0/1, True/False, M/F)
+- **Kept as-is without transformation**
+- No capping, binning, or grouping applied
+
+**Target Column**:
+- Can be specified with `target_col` parameter
+- **Excluded from all transformations**
+- Preserved in final dataset unchanged
+
 ### 2. Feature Quality Filter (`src/features/feature_filter.py`)
 
 **Automatically removes:**
@@ -56,10 +66,14 @@ See `USAGE.md` for all options.
 from src.features.feature_engineering import FeatureEngineer, FeatureTransformConfig
 from src.features.feature_filter import FeatureFilter, FeatureFilterConfig
 
-# 1. Transform features
+# 1. Transform features (binary features auto-detected, target excluded)
 fe = FeatureEngineer()
-df_transformed = fe.fit_transform_numerical(df, numerical_cols)
-df_transformed = fe.fit_transform_categorical(df_transformed, categorical_cols)
+df_transformed = fe.fit_transform_numerical(df, numerical_cols, target_col='label')
+df_transformed = fe.fit_transform_categorical(df_transformed, categorical_cols, target_col='label')
+
+# Check what was detected
+print(f"Binary features: {fe.binary_features}")  # e.g., ['is_active', 'has_loan']
+print(f"Target: {fe.target_col}")  # 'label'
 
 # 2. Filter low-quality features
 ff = FeatureFilter()

@@ -90,13 +90,13 @@ def main():
     # Numerical transformations
     if numerical_cols:
         print(f"\nTransforming {len(numerical_cols)} numerical features...")
-        df_transformed = fe.fit_transform_numerical(df_transformed, numerical_cols)
-        print(f"✓ Created {len(numerical_cols) * (1 + len(args.bins))} numerical features")
+        df_transformed = fe.fit_transform_numerical(df_transformed, numerical_cols, target_col=args.target)
+        print(f"✓ Created numerical transformations")
 
     # Categorical transformations
     if categorical_cols:
         print(f"\nTransforming {len(categorical_cols)} categorical features...")
-        df_transformed = fe.fit_transform_categorical(df_transformed, categorical_cols)
+        df_transformed = fe.fit_transform_categorical(df_transformed, categorical_cols, target_col=args.target)
         print(f"✓ Processed categorical features")
 
     # Feature filtering (optional)

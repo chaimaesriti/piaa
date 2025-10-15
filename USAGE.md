@@ -7,9 +7,18 @@
 python transform_data.py data/train.csv
 ```
 
-### 2. With feature quality filtering
+### 2. With target column (recommended)
 ```bash
-python transform_data.py data/train.csv --filter
+python transform_data.py data/train.csv --target label
+```
+Automatically:
+- Excludes target from transformations
+- Detects binary features (2 unique values) and keeps them as-is
+- Shows what was skipped
+
+### 3. With feature quality filtering
+```bash
+python transform_data.py data/train.csv --filter --target label
 ```
 Removes:
 - Features with >90% missing values
