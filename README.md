@@ -29,34 +29,59 @@ Complete pipeline for feature transformation and quality filtering before modeli
 
 **Automatically removes:**
 - Features with **high missingness** (>90% by default)
-- Features with **high cardinality**:
-  - Numerical: ≥1000 unique values
-  - Categorical: ≥100 unique values
+- Features with **high cardinality** (>90% unique values / total rows by default)
+  - Example: In 1000-row dataset, removes features with >900 unique values
+  - Adapts to dataset size automatically
 - Features with **zero variance** (constant values)
 
 **All thresholds are configurable**
+
+### 3. Feature Selection (`src/features/feature_selection.py`)
+
+**Ranks and selects best features for modeling:**
+
+**Selection Methods:**
+- **Mutual Information**: Measures dependency between features and target
+- **Tree-based Importance**: Random Forest feature importance
+- **Correlation**: Spearman correlation with target
+- **Statistical Tests**: ANOVA F-test (classification) or F-regression (regression)
+
+**Selection Criteria:**
+- Top K features (e.g., top 10, top 20)
+- Threshold-based (score > threshold)
+- Ensemble: Aggregates scores across multiple methods
+
+**Output:**
+- Ranked feature list with scores
+- Selected features for modeling
+- Detailed feature importance summary
 
 ## Usage
 
 ### Command Line
 
 ```bash
-# Basic transformation
+# Basic transformation (auto-saves to transformed_train.csv)
 python transform_data.py train.csv
 
-# With quality filtering
-python transform_data.py train.csv --filter
+# With target, filtering, and feature selection
+python transform_data.py train.csv --target label --filter --select --select-top-k 10
 
-# Full pipeline with options
+# Full pipeline: transform → filter → select
 python transform_data.py train.csv \
-  --filter \
-  --max-missing 0.80 \
-  --max-cardinality-num 500 \
-  --max-cardinality-cat 50 \
   --target label \
-  --output train_transformed.csv \
+  --filter \
+  --select \
+  --select-top-k 20 \
+  --task classification \
   --show-summary
+
+# Custom output or disable auto-save
+python transform_data.py train.csv --output custom.csv  # Custom filename
+python transform_data.py train.csv --no-save            # Preview only
 ```
+
+**Auto-save:** Transformed data automatically saved as `transformed_{input_name}.csv`
 
 See `USAGE.md` for all options.
 
@@ -94,6 +119,9 @@ python tests/test_feature_engineering.py
 # Test quality filtering
 python tests/test_feature_filter.py
 
+# Test binary feature detection
+python tests/test_binary_features.py
+
 # Test full pipeline
 python tests/test_full_pipeline.py
 ```
@@ -122,6 +150,7 @@ piaa/
 
 ✅ Feature Engineering (capped, binned, grouped)
 ✅ Quality Filtering (missingness, cardinality, variance)
+✅ Feature Selection (ranking & selection for modeling)
 ⬜ Feature Set Registry (track which features used)
 ⬜ Models (TabNet, MLP, NN with softmax)
 ⬜ Experiment Tracking (features + model + metrics)

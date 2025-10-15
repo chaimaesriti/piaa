@@ -4,10 +4,12 @@ Command-line tool to transform features from CSV data
 Usage: python transform_data.py train.csv [options]
 """
 import sys
+import os
 import argparse
 import pandas as pd
 from src.features.feature_engineering import FeatureEngineer, FeatureTransformConfig
 from src.features.feature_filter import FeatureFilter, FeatureFilterConfig
+from src.features.feature_selection import FeatureSelector, FeatureSelectionConfig
 
 
 def infer_column_types(df):
@@ -17,12 +19,35 @@ def infer_column_types(df):
     return numerical, categorical
 
 
+def generate_output_filename(input_path):
+    """
+    Generate output filename with transformed_ prefix
+
+    Examples:
+        train.csv -> transformed_train.csv
+        data/train.csv -> data/transformed_train.csv
+        /path/to/file.csv -> /path/to/transformed_file.csv
+    """
+    directory = os.path.dirname(input_path)
+    filename = os.path.basename(input_path)
+    name, ext = os.path.splitext(filename)
+
+    output_filename = f"transformed_{name}{ext}"
+
+    if directory:
+        return os.path.join(directory, output_filename)
+    else:
+        return output_filename
+
+
 def main():
     parser = argparse.ArgumentParser(description='Transform features in CSV data')
     parser.add_argument('input_file', help='Path to input CSV file')
     parser.add_argument('--numerical', '-n', nargs='+', help='Numerical column names')
     parser.add_argument('--categorical', '-c', nargs='+', help='Categorical column names')
-    parser.add_argument('--output', '-o', help='Output file path (optional)')
+    parser.add_argument('--output', '-o', help='Output file path (default: auto-generated as transformed_{input_name}.csv)')
+    parser.add_argument('--no-save', action='store_true',
+                        help='Do not automatically save transformed data')
     parser.add_argument('--cap-percentiles', nargs=2, type=float, default=[1, 99],
                         help='Percentiles for capping (default: 1 99)')
     parser.add_argument('--bins', nargs='+', type=int, default=[10, 20],
@@ -37,11 +62,22 @@ def main():
                         help='Enable feature quality filtering')
     parser.add_argument('--max-missing', type=float, default=0.90,
                         help='Max missing rate (default: 0.90)')
-    parser.add_argument('--max-cardinality-num', type=int, default=1000,
-                        help='Max cardinality for numerical (default: 1000)')
-    parser.add_argument('--max-cardinality-cat', type=int, default=100,
-                        help='Max cardinality for categorical (default: 100)')
+    parser.add_argument('--max-cardinality-ratio', type=float, default=0.90,
+                        help='Max cardinality ratio: nunique/nrows (default: 0.90 = 90%%)')
     parser.add_argument('--target', help='Target column to exclude from filtering')
+
+    # Feature selection options
+    parser.add_argument('--select', action='store_true',
+                        help='Enable feature selection to rank best features')
+    parser.add_argument('--select-methods', nargs='+',
+                        default=['mutual_info', 'tree_importance', 'correlation'],
+                        help='Feature selection methods (default: mutual_info tree_importance correlation)')
+    parser.add_argument('--select-top-k', type=int,
+                        help='Select top K features')
+    parser.add_argument('--select-threshold', type=float,
+                        help='Select features with score above threshold')
+    parser.add_argument('--task', choices=['classification', 'regression'], default='classification',
+                        help='ML task type (default: classification)')
 
     args = parser.parse_args()
 
@@ -107,22 +143,14 @@ def main():
 
         filter_config = FeatureFilterConfig(
             max_missing_rate=args.max_missing,
-            max_cardinality_numeric=args.max_cardinality_num,
-            max_cardinality_categorical=args.max_cardinality_cat
+            max_cardinality_ratio=args.max_cardinality_ratio
         )
 
         ff = FeatureFilter(filter_config)
 
-        # Get all transformed features
-        transformed_numerical = fe.get_feature_list()
-        # Separate back into numerical and categorical
-        transformed_categorical = [col for col in df_transformed.columns
-                                   if col in categorical_cols or col.endswith('_grouped')]
-
         print(f"\nApplying quality filters...")
         print(f"  Max missing rate: {args.max_missing:.0%}")
-        print(f"  Max cardinality (numerical): {args.max_cardinality_num}")
-        print(f"  Max cardinality (categorical): {args.max_cardinality_cat}")
+        print(f"  Max cardinality ratio: {args.max_cardinality_ratio:.0%} (unique/rows)")
 
         df_transformed = ff.fit_transform(
             df_transformed,
@@ -135,6 +163,50 @@ def main():
         ff.print_summary()
     else:
         print(f"\nℹ  Filtering disabled. Use --filter to enable quality filtering.")
+
+    # Feature selection (optional)
+    if args.select:
+        if args.target is None:
+            print(f"\n✗ Error: --target is required for feature selection")
+            sys.exit(1)
+
+        if args.target not in df_transformed.columns:
+            print(f"\n✗ Error: Target column '{args.target}' not found in data")
+            sys.exit(1)
+
+        print(f"\n{'='*60}")
+        print("FEATURE SELECTION")
+        print('='*60)
+
+        # Separate features and target
+        X = df_transformed.drop(columns=[args.target])
+        y = df_transformed[args.target]
+
+        # Configure feature selector
+        selection_config = FeatureSelectionConfig(
+            methods=args.select_methods,
+            top_k=args.select_top_k,
+            threshold=args.select_threshold,
+            task=args.task
+        )
+
+        fs = FeatureSelector(selection_config)
+        fs.fit(X, y)
+
+        # Print summary
+        fs.print_summary(top_n=20)
+
+        # Select features
+        X_selected = fs.transform(X)
+
+        # Reconstruct dataframe with selected features + target
+        df_transformed = pd.concat([X_selected, y], axis=1)
+
+        print(f"\n✓ Feature selection complete")
+        print(f"  Selected {len(X_selected.columns)} out of {len(X.columns)} features")
+
+    else:
+        print(f"\nℹ  Feature selection disabled. Use --select to enable feature selection.")
 
     # Results
     print(f"\n{'='*60}")
@@ -167,14 +239,29 @@ def main():
     print(df_transformed.head())
 
     # Save output
-    if args.output:
-        print(f"\n{'='*60}")
-        print(f"Saving to {args.output}...")
-        df_transformed.to_csv(args.output, index=False)
-        print(f"✓ Saved {len(df_transformed)} rows")
+    print(f"\n{'='*60}")
+    if args.no_save:
+        print("AUTO-SAVE DISABLED")
+        print('='*60)
+        print("ℹ  Data not saved (--no-save specified)")
+        print("   Use --output <file> to save manually")
     else:
-        print(f"\n{'='*60}")
-        print("TIP: Use --output <file> to save transformed data")
+        # Determine output filename
+        if args.output:
+            output_file = args.output
+        else:
+            output_file = generate_output_filename(args.input_file)
+
+        print(f"SAVING TRANSFORMED DATA")
+        print('='*60)
+        print(f"Output file: {output_file}")
+
+        try:
+            df_transformed.to_csv(output_file, index=False)
+            print(f"✓ Saved {len(df_transformed)} rows, {len(df_transformed.columns)} columns")
+            print(f"✓ File: {output_file}")
+        except Exception as e:
+            print(f"✗ Error saving file: {e}")
 
     print(f"\n{'='*60}")
     print("DONE!")

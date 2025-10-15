@@ -100,27 +100,27 @@ def test_high_cardinality_filter():
 
     df = create_problematic_data()
 
-    print("\nCardinality:")
+    n_rows = len(df)
+    print(f"\nTotal rows: {n_rows}")
+    print("\nCardinality and ratios:")
     for col in df.columns:
         cardinality = df[col].nunique()
-        print(f"  {col}: {cardinality}")
+        ratio = cardinality / n_rows
+        print(f"  {col}: {cardinality} unique ({ratio:.1%})")
 
-    # Filter with default thresholds
+    # Filter with ratio threshold (10% = remove features with >10% unique)
     config = FeatureFilterConfig(
-        max_cardinality_numeric=1000,
-        max_cardinality_categorical=100
+        max_cardinality_ratio=0.10  # Remove if >10% unique values
     )
     ff = FeatureFilter(config)
     ff.fit(df, target_col='target')
 
-    print(f"\nThresholds:")
-    print(f"  Numerical: {config.max_cardinality_numeric}")
-    print(f"  Categorical: {config.max_cardinality_categorical}")
-    print(f"\nFeatures removed (high cardinality): {ff.removed_features['high_cardinality']}")
+    print(f"\nThreshold: {config.max_cardinality_ratio:.0%} (unique/rows)")
+    print(f"Features removed (high cardinality): {ff.removed_features['high_cardinality']}")
 
     # Verify
-    assert 'user_id' in ff.removed_features['high_cardinality']  # 1000 unique
-    assert 'high_card_cat' in ff.removed_features['high_cardinality']  # 200 categories
+    assert 'user_id' in ff.removed_features['high_cardinality']  # 100% unique
+    assert 'high_card_cat' in ff.removed_features['high_cardinality']  # ~20% unique
 
     print("\n✓ Test passed!")
     return ff
@@ -168,8 +168,7 @@ def test_full_filter():
     # Configure filter
     config = FeatureFilterConfig(
         max_missing_rate=0.90,
-        max_cardinality_numeric=500,  # Stricter
-        max_cardinality_categorical=100,
+        max_cardinality_ratio=0.50,  # Remove if >50% unique
         min_variance=0.0
     )
 

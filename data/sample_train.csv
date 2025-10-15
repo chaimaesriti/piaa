@@ -1,0 +1,11 @@
+age,income,credit_score,is_premium,country,gender,target
+25,45000,720,1,USA,M,0
+35,65000,680,0,UK,F,1
+42,85000,750,1,USA,M,1
+28,52000,690,0,Canada,F,0
+55,95000,800,1,UK,M,1
+33,48000,670,0,France,F,0
+40,72000,710,1,USA,M,1
+29,58000,695,0,UK,F,0
+48,88000,760,1,Canada,M,1
+31,61000,705,0,USA,F,0

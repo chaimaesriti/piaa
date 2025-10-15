@@ -14,9 +14,8 @@ class FeatureFilterConfig:
     # Missingness threshold
     max_missing_rate: float = 0.90  # Remove features with >90% missing
 
-    # Cardinality thresholds
-    max_cardinality_numeric: int = 1000  # Max unique values for numeric
-    max_cardinality_categorical: int = 100  # Max unique values for categorical
+    # Cardinality threshold (ratio-based)
+    max_cardinality_ratio: float = 0.90  # Remove if nunique/nrows > 90%
 
     # Additional filters
     min_variance: float = 0.0  # Remove zero-variance features
@@ -29,9 +28,10 @@ class FeatureFilter:
 
     Removes:
     - Features with high missingness (>90% by default)
-    - Numerical features with high cardinality (>1000 unique values)
-    - Categorical features with high cardinality (>100 unique values)
+    - Features with high cardinality (>90% unique values / total rows by default)
     - Zero or near-zero variance features
+
+    Example: In a 1000-row dataset, features with >900 unique values are removed
     """
 
     def __init__(self, config: Optional[FeatureFilterConfig] = None):
@@ -83,11 +83,16 @@ class FeatureFilter:
         self.filter_report = {}
 
         # Check each feature
+        n_rows = len(df)
         for col in all_features:
+            cardinality = df[col].nunique()
+            cardinality_ratio = cardinality / n_rows if n_rows > 0 else 0
+
             col_report = {
                 'type': 'numerical' if col in numerical_cols else 'categorical',
-                'missing_rate': df[col].isna().sum() / len(df),
-                'cardinality': df[col].nunique(),
+                'missing_rate': df[col].isna().sum() / n_rows,
+                'cardinality': cardinality,
+                'cardinality_ratio': cardinality_ratio,
                 'variance': df[col].var() if col in numerical_cols and pd.api.types.is_numeric_dtype(df[col]) else None,
                 'kept': True,
                 'removal_reason': None
@@ -100,14 +105,8 @@ class FeatureFilter:
                 self.removed_features['high_missingness'].append(col)
                 self.removed_features['all'].append(col)
 
-            # Check 2: High cardinality
-            elif col in numerical_cols and col_report['cardinality'] >= self.config.max_cardinality_numeric:
-                col_report['kept'] = False
-                col_report['removal_reason'] = 'high_cardinality'
-                self.removed_features['high_cardinality'].append(col)
-                self.removed_features['all'].append(col)
-
-            elif col in categorical_cols and col_report['cardinality'] >= self.config.max_cardinality_categorical:
+            # Check 2: High cardinality (ratio-based)
+            elif cardinality_ratio > self.config.max_cardinality_ratio:
                 col_report['kept'] = False
                 col_report['removal_reason'] = 'high_cardinality'
                 self.removed_features['high_cardinality'].append(col)
@@ -201,7 +200,7 @@ class FeatureFilter:
         print()
         print("Removal reasons:")
         print(f"  - High missingness (>{self.config.max_missing_rate:.0%}): {stats['removed_high_missingness']}")
-        print(f"  - High cardinality:                {stats['removed_high_cardinality']}")
+        print(f"  - High cardinality (>{self.config.max_cardinality_ratio:.0%} unique/rows): {stats['removed_high_cardinality']}")
         print(f"  - Zero variance:                   {stats['removed_zero_variance']}")
         print()
 
@@ -215,7 +214,7 @@ class FeatureFilter:
                         if reason == 'high_missingness':
                             print(f"    - {feat} (missing: {report['missing_rate']:.1%})")
                         elif reason == 'high_cardinality':
-                            print(f"    - {feat} (cardinality: {report['cardinality']})")
+                            print(f"    - {feat} (cardinality: {report['cardinality']}, ratio: {report['cardinality_ratio']:.1%})")
                         elif reason == 'zero_variance':
                             print(f"    - {feat} (variance: {report['variance']})")
 
