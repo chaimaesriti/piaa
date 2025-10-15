@@ -21,6 +21,9 @@ class FeatureSelectionConfig:
     top_k: Optional[int] = None  # Select top K features
     threshold: Optional[float] = None  # Select features above threshold
 
+    # Redundancy removal
+    max_correlation: float = 0.95  # Remove features correlated > this threshold
+
     # Task type
     task: str = 'classification'  # 'classification' or 'regression'
 
@@ -50,6 +53,8 @@ class FeatureSelector:
         self.feature_rankings = {}  # Method -> [features sorted by importance]
         self.selected_features = []
         self.feature_summary = None
+        self.removed_redundant = []  # Features removed due to correlation
+        self.X_numeric = None  # Store for correlation calculation
 
     def fit(
         self,
@@ -74,6 +79,10 @@ class FeatureSelector:
         # Ensure X is numeric
         X_numeric = self._prepare_features(X)
 
+        # Store for correlation calculation
+        self.X_numeric = X_numeric
+        self.feature_names = feature_names
+
         print(f"\n{'='*60}")
         print("FEATURE SELECTION")
         print('='*60)
@@ -81,6 +90,7 @@ class FeatureSelector:
         print(f"Features: {len(feature_names)}")
         print(f"Samples: {len(X)}")
         print(f"Methods: {', '.join(self.config.methods)}")
+        print(f"Redundancy removal: max_correlation={self.config.max_correlation}")
 
         # Compute scores with each method
         for method in self.config.methods:
@@ -178,7 +188,7 @@ class FeatureSelector:
         return scores
 
     def _select_features(self, feature_names: List[str]):
-        """Select features based on criteria"""
+        """Select features based on criteria with redundancy removal"""
         print(f"\n{'='*60}")
         print("FEATURE SELECTION CRITERIA")
         print('='*60)
@@ -202,24 +212,60 @@ class FeatureSelector:
             reverse=True
         )
 
-        # Apply selection criteria
+        # Determine target count based on criteria
         if self.config.top_k is not None:
-            self.selected_features = [f[0] for f in sorted_features[:self.config.top_k]]
-            print(f"Criterion: Top {self.config.top_k} features")
-
+            target_k = self.config.top_k
+            print(f"Criterion: Top {self.config.top_k} features (with redundancy removal)")
         elif self.config.threshold is not None:
-            self.selected_features = [
-                f[0] for f in sorted_features
-                if f[1] >= self.config.threshold
-            ]
-            print(f"Criterion: Score >= {self.config.threshold}")
-
+            target_k = len([f for f in sorted_features if f[1] >= self.config.threshold])
+            print(f"Criterion: Score >= {self.config.threshold} (with redundancy removal)")
         else:
-            # Default: select all features (just ranked)
-            self.selected_features = [f[0] for f in sorted_features]
-            print(f"Criterion: All features (ranked)")
+            target_k = len(sorted_features)
+            print(f"Criterion: All features (ranked, with redundancy removal)")
+
+        # Select features while removing redundancy
+        self.selected_features = []
+        self.removed_redundant = []
+        redundancy_details = {}  # feature -> (corr, correlated_with)
+
+        for feature, score in sorted_features:
+            # Stop if we have enough features
+            if self.config.top_k is not None and len(self.selected_features) >= self.config.top_k:
+                break
+
+            # Check threshold
+            if self.config.threshold is not None and score < self.config.threshold:
+                break
+
+            # Check correlation with already selected features
+            if self.selected_features and self.config.max_correlation < 1.0:
+                feature_idx = self.feature_names.index(feature)
+                is_redundant = False
+
+                for selected_feature in self.selected_features:
+                    selected_idx = self.feature_names.index(selected_feature)
+
+                    # Calculate correlation
+                    corr = np.corrcoef(
+                        self.X_numeric[:, feature_idx],
+                        self.X_numeric[:, selected_idx]
+                    )[0, 1]
+
+                    if abs(corr) > self.config.max_correlation:
+                        is_redundant = True
+                        self.removed_redundant.append(feature)
+                        redundancy_details[feature] = (abs(corr), selected_feature)
+                        break
+
+                if is_redundant:
+                    continue
+
+            # Add feature to selected
+            self.selected_features.append(feature)
 
         print(f"Selected: {len(self.selected_features)} / {len(feature_names)} features")
+        if self.removed_redundant:
+            print(f"Removed as redundant: {len(self.removed_redundant)} features")
 
         # Create summary
         self.feature_summary = pd.DataFrame([
@@ -227,6 +273,9 @@ class FeatureSelector:
                 'feature': feature,
                 'aggregated_score': aggregated_scores.get(feature, 0),
                 'selected': feature in self.selected_features,
+                'redundant': feature in self.removed_redundant,
+                'correlated_with': redundancy_details.get(feature, (None, None))[1] if feature in redundancy_details else None,
+                'correlation': redundancy_details.get(feature, (None, None))[0] if feature in redundancy_details else None,
                 **{f'{method}_score': self.feature_scores[method].get(feature, 0)
                    for method in self.feature_scores}
             }
@@ -296,17 +345,28 @@ class FeatureSelector:
 
         print(f"\nTotal features evaluated: {len(self.feature_summary)}")
         print(f"Features selected: {len(self.selected_features)}")
+        print(f"Features removed as redundant: {len(self.removed_redundant)}")
         print(f"Selection rate: {len(self.selected_features) / len(self.feature_summary):.1%}")
 
         print(f"\n{'='*60}")
         print(f"Top {top_n} Features (by aggregated score):")
         print('='*60)
 
-        display_cols = ['feature', 'aggregated_score', 'selected'] + \
+        display_cols = ['feature', 'aggregated_score', 'selected', 'redundant'] + \
                       [f'{m}_score' for m in self.feature_scores]
 
         summary_display = self.feature_summary[display_cols].head(top_n)
         print(summary_display.to_string(index=False, float_format='%.4f'))
+
+        # Show redundant features details
+        if self.removed_redundant:
+            print(f"\n{'='*60}")
+            print("Redundant Features (removed due to high correlation):")
+            print('='*60)
+            redundant_df = self.feature_summary[
+                self.feature_summary['redundant'] == True
+            ][['feature', 'aggregated_score', 'correlated_with', 'correlation']].head(20)
+            print(redundant_df.to_string(index=False, float_format='%.4f'))
 
         if len(self.selected_features) < len(self.feature_summary):
             print(f"\n{'='*60}")

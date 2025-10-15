@@ -51,9 +51,17 @@ Complete pipeline for feature transformation and quality filtering before modeli
 - Threshold-based (score > threshold)
 - Ensemble: Aggregates scores across multiple methods
 
+**Redundancy Removal** (NEW):
+- Automatically removes highly correlated features (>95% by default)
+- Keeps only the best version of each feature
+- Example: Selects `BMI` but removes `BMI_capped`, `BMI_binned_10`, `BMI_binned_20`
+- Ensures diverse, non-redundant feature set
+- Configurable with `--select-max-corr` (default: 0.95)
+
 **Output:**
 - Ranked feature list with scores
 - Selected features for modeling
+- List of redundant features removed
 - Detailed feature importance summary
 
 ## Usage

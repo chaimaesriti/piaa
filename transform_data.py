@@ -76,6 +76,8 @@ def main():
                         help='Select top K features')
     parser.add_argument('--select-threshold', type=float,
                         help='Select features with score above threshold')
+    parser.add_argument('--select-max-corr', type=float, default=0.95,
+                        help='Max correlation between selected features (default: 0.95)')
     parser.add_argument('--task', choices=['classification', 'regression'], default='classification',
                         help='ML task type (default: classification)')
 
@@ -187,6 +189,7 @@ def main():
             methods=args.select_methods,
             top_k=args.select_top_k,
             threshold=args.select_threshold,
+            max_correlation=args.select_max_corr,
             task=args.task
         )
 
